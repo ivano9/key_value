@@ -91,9 +91,9 @@ normalize(KV) when is_list(KV) ->
         lists:foldl(
             fun
                 ({K, V}, Acc) ->
-                    maps:put(K, V, Acc);
+                    Acc#{K => V};
                 (K, Acc) when is_atom(K) ->
-                    maps:put(K, true, Acc)
+                    Acc#{K => true}
             end,
             maps:new(),
             KV
@@ -492,111 +492,110 @@ set(Key, Value, KV) ->
 
 
 %% -----------------------------------------------------------------------------
-%% @doc
-%% If Key is a tuple it will be treated as a list
+%% @doc Inserts or updates a Value at the given Key or Path within a KV map 
+%% or proplist. If Key is a path (list of keys), it traverses or creates 
+%% the nested structure maintaining the parent's data type.
 %% @end
 %% -----------------------------------------------------------------------------
 -spec put(Key :: key(), Value :: any(), KV :: t()) -> NewKV :: t().
 
-put([H|[]], Value, KV) ->
-    put(H, Value, KV);
+put([H], Value, KV) ->
+	put(H, Value, KV);
 
-put([H|T], Value, KV) when is_list(KV) ->
-    InnerTerm = put(T, Value, get(H, KV, [])),
-    lists:keystore(H, 1, KV, {H, InnerTerm});
+put([H | T], Value, KV) when is_list(KV) ->
+	InnerTerm = put(T, Value, get(H, KV, [])),
+	lists:keystore(H, 1, KV, {H, InnerTerm});
 
-put([H|T], Value, KV) when is_map(KV) ->
-    InnerTerm = put(T, Value, get(H, KV, [])),
-    maps:put(H, InnerTerm, KV);
+put([H | T], Value, KV) when is_map(KV) ->
+	InnerTerm = put(T, Value, get(H, KV, #{})),
+	KV#{H => InnerTerm};
 
-put([], _, _)  ->
-    error(badkey);
+put([], _Value, _KV) ->
+	error(badkey);
 
 put(Key, Value, KV) when is_list(KV) ->
-    lists:keystore(Key, 1, KV, {Key, Value});
+	lists:keystore(Key, 1, KV, {Key, Value});
 
 put(Key, Value, KV) when is_map(KV) ->
-    maps:put(Key, Value, KV);
+	KV#{Key => Value};
 
-put(_, _, _) ->
-    error(badarg).
+put(_Key, _Value, _KV) ->
+	error(badarg).
 
 
 %% -----------------------------------------------------------------------------
-%% @doc
+%% @doc Removes the Key or Path from the KV structure.
+%% Maintains the data type (map or proplist) of the parent when traversing.
 %% @end
 %% -----------------------------------------------------------------------------
 -spec remove(Key :: key(), KV :: t()) -> NewKV :: t().
 
+remove([H], KV) ->
+	remove(H, KV);
 
-remove([H|[]], KV) ->
-    remove(H, KV);
+remove([H | T], KV) when is_list(KV) ->
+	InnerTerm = remove(T, get(H, KV, [])),
+	lists:keystore(H, 1, KV, {H, InnerTerm});
 
-remove([H|T], KV) when is_list(KV) ->
-    InnerTerm = remove(T, get(H, KV, [])),
-    lists:keystore(H, 1, KV, {H, InnerTerm});
+remove([H | T], KV) when is_map(KV) ->
+	InnerTerm = remove(T, get(H, KV, #{})),
+	KV#{H => InnerTerm};
 
-remove([H|T], KV) when is_map(KV) ->
-    InnerTerm = remove(T, get(H, KV, [])),
-    maps:put(H, InnerTerm, KV);
-
-remove([], _)  ->
-    error(badkey);
+remove([], _KV)  ->
+	error(badkey);
 
 remove(Key, KV) when is_list(KV) ->
-    lists:keydelete(Key, 1, KV);
+	lists:keydelete(Key, 1, KV);
 
 remove(Key, KV) when is_map(KV) ->
-    maps:remove(Key, KV);
+	maps:remove(Key, KV);
 
-remove(_, _) ->
-    error(badarg).
+remove(_Key, _KV) ->
+	error(badarg).
 
 
 %% -----------------------------------------------------------------------------
-%% @doc
+%% @doc Extracts the Value associated with Key or Path and returns a tuple
+%% containing the Value and the NewKV structure without the Key.
 %% @end
 %% -----------------------------------------------------------------------------
--spec take(Key :: key(), KV :: t()) ->
-    {Value :: term(), NewKV :: t()} | error.
+-spec take(Key :: key(), KV :: t()) -> {Value :: term(), NewKV :: t()} | error.
 
+take([H], KV) ->
+	take(H, KV);
 
-take([H|[]], KV) ->
-    take(H, KV);
+take([H | T], KV) when is_list(KV) ->
+	case take(T, get(H, KV, [])) of
+		{Val, InnerTerm} ->
+			{Val, lists:keystore(H, 1, KV, {H, InnerTerm})};
+		error ->
+			error
+	end;
 
-take([H|T], KV) when is_list(KV) ->
-    case take(T, get(H, KV, [])) of
-        {Val, InnerTerm} ->
-            {Val, lists:keystore(H, 1, KV, {H, InnerTerm})};
-        error ->
-            error
-    end;
+take([H | T], KV) when is_map(KV) ->
+	case take(T, get(H, KV, #{})) of
+		{Val, InnerTerm} ->
+			{Val, KV#{H => InnerTerm}};
+		error ->
+			error
+	end;
 
-take([H|T], KV) when is_map(KV) ->
-    case take(T, get(H, KV, [])) of
-        {Val, InnerTerm} ->
-            {Val, maps:put(H, InnerTerm, KV)};
-        error ->
-            error
-    end;
-
-take([], _)  ->
-    error(badkey);
+take([], _KV)  ->
+	error(badkey);
 
 take(Key, KV) when is_list(KV) ->
-    case lists:keytake(Key, 1, KV) of
-        {value, {Key, Value}, NewKV} ->
-            {Value, NewKV};
-        false ->
-            error
-    end;
+	case lists:keytake(Key, 1, KV) of
+		{value, {_Key, Value}, NewKV} ->
+			{Value, NewKV};
+		false ->
+			error
+	end;
 
 take(Key, KV) when is_map(KV) ->
-    maps:take(Key, KV);
+	maps:take(Key, KV);
 
-take(_, _) ->
-    error(badarg).
-
+take(_Key, _KV) ->
+	error(badarg).
 
 
 %% -----------------------------------------------------------------------------
@@ -682,14 +681,14 @@ to_map(KV) when is_list(KV) ->
                     true ->
                         Acc;
                     false ->
-                        maps:put(K, V, Acc)
+                        Acc#{K => V}
                 end;
             (K, Acc) ->
                 case maps:is_key(K, Acc) of
                     true ->
                         Acc;
                     false ->
-                        maps:put(K, true, Acc)
+                        Acc#{K => true}
                 end
         end,
         #{},
