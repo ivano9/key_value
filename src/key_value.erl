@@ -189,12 +189,12 @@ get(Key, KV, Default) when is_list(KV) ->
     end;
 
 get([H|T], KV, Default) when is_map(KV) ->
-    case maps:find(H, KV) of
-        {ok, Child} ->
-            get(T, Child, Default);
-        error ->
-            maybe_badkey(Default)
-    end;
+    case KV of
+       #{H := Child} ->
+           get(T, Child, Default);
+       #{} ->
+           maybe_badkey(Default)
+   end;
 
 get(Key, KV, Default) when is_map(KV) ->
     maybe_badkey(maps:get(Key, KV, Default));
@@ -369,7 +369,7 @@ collect(Keys, KV) ->
 
 collect(Keys, Map, Opts0) when is_list(Keys) andalso is_map(Opts0) ->
     Opts1 = maps:merge(?DEFAULT_COLLECT_OPTS, Opts0),
-    Opts = maps:put(?COLLECT_VALUES, false, Opts1),
+    Opts = Opts1#{?COLLECT_VALUES => false},
     Acc = case maps:get(return, Opts) of
         list -> [];
         map -> maps:new()
@@ -477,7 +477,7 @@ collect_values(Keys, Map, Opts0) ->
     %% We remove the posibility of a user forcing this function to behave like
     %% collect_values/3 to maintain the semantics of the API.
     Opts1 = maps:merge(?DEFAULT_COLLECT_OPTS, Opts0),
-    Opts = maps:put(?COLLECT_VALUES, false, Opts1),
+    Opts = Opts1#{?COLLECT_VALUES => false},
     do_collect(Keys, Map, Opts, []).
 
 
