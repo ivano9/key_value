@@ -1,6 +1,6 @@
 {application, key_value,
  [{description, "An OTP library"},
-  {vsn, "1.1.1"},
+  {vsn, "1.1.2"},
   {registered, []},
   {applications,
    [kernel,
